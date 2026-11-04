@@ -125,7 +125,7 @@ struct SpaceMapView: View {
             }
             .onChange(of: hovered?.id) { _, _ in if let hovered { menuTarget = hovered } }
             .contextMenu { if let node = menuTarget { menu(for: node) } }
-            .frame(minWidth: 380, maxWidth: 560).aspectRatio(1, contentMode: .fit)
+            .frame(minWidth: 300, maxWidth: 560).aspectRatio(1, contentMode: .fit)
             Text(hovered.map { "\($0.name) · \(size($0.bytes))" } ?? "Hover a segment · click to open")
               .font(.callout).foregroundStyle(.secondary).lineLimit(1)
           }
@@ -266,9 +266,8 @@ struct SpaceMapView: View {
           Capsule().fill(color.opacity(0.8))
             .frame(width: geometry.size.width * share(node.bytes, of: total))
         }.frame(height: 4)
-      }
-      Spacer(minLength: 8)
-      Text(size(node.bytes)).monospacedDigit()
+      }.frame(minWidth: 70, maxWidth: .infinity, alignment: .leading).layoutPriority(1)
+      Text(size(node.bytes)).monospacedDigit().lineLimit(1).fixedSize()
       Text(String(format: "%.1f%%", share(node.bytes, of: total) * 100)).font(.caption)
         .foregroundStyle(.secondary).frame(width: 46, alignment: .trailing)
       if let url = node.url {
@@ -280,7 +279,7 @@ struct SpaceMapView: View {
         } label: { Image(systemName: "trash") }.help("Move to Trash")
           .disabled(model.scanning || !SizeTree.canTrash(url))
       }
-    }.padding(10).contentShape(Rectangle())
+    }.controlSize(.small).padding(10).contentShape(Rectangle())
       .background(hovered?.id == node.id ? Color.blue.opacity(0.25) : panel, in: RoundedRectangle(cornerRadius: 8))
       .onTapGesture { model.open(node) }
       .onHover { hovered = $0 ? node : nil }
@@ -335,7 +334,10 @@ private struct Sunburst: View {
     let depth: Int
     let start: Double
     let end: Double
+    /// Hue of the top-level branch this arc belongs to.
     let hue: Double
+    /// Sibling shade (0–2) so neighbors in one branch stay distinguishable without changing hue.
+    let tone: Int
   }
 
   var body: some View {
@@ -355,8 +357,8 @@ private struct Sunburst: View {
               shape,
               with: .radialGradient(
                 Gradient(colors: [
-                  Self.color(hue: arc.hue, depth: arc.depth, node: arc.node, lift: 0.1),
-                  Self.color(hue: arc.hue, depth: arc.depth, node: arc.node),
+                  Self.color(hue: arc.hue, depth: arc.depth, tone: arc.tone, node: arc.node, lift: 0.08),
+                  Self.color(hue: arc.hue, depth: arc.depth, tone: arc.tone, node: arc.node),
                 ]), center: center, startRadius: inner, endRadius: inner + ring))
             context.stroke(shape, with: .color(.white.opacity(0.22)), lineWidth: 0.8)
             if hovered?.id == arc.node.id { highlight = shape }
@@ -409,15 +411,15 @@ private struct Sunburst: View {
           angle += childSweep
           continue
         }
-        // Top level picks a palette color; deeper levels drift around the parent's hue
-        // so a big folder shows variety instead of one flat block.
-        let childHue =
-          hue.map { $0 + (Double(index % 5) - 2) * 0.022 } ?? palette[index % palette.count]
+        // Each top-level folder owns one hue family; everything inside it keeps that hue and
+        // only varies in shade, so branches read as harmonious, related colors.
+        let branchHue = hue ?? palette[index % palette.count]
+        let tone = hue == nil ? 0 : index % 3
         result.append(
           Arc(
             node: child, depth: depth, start: angle - .pi / 2, end: angle + childSweep - .pi / 2,
-            hue: childHue))
-        walk(child, depth: depth + 1, start: angle, sweep: childSweep, hue: childHue)
+            hue: branchHue, tone: tone))
+        walk(child, depth: depth + 1, start: angle, sweep: childSweep, hue: branchHue)
         angle += childSweep
       }
     }
@@ -425,19 +427,24 @@ private struct Sunburst: View {
     return result
   }
 
-  /// Coral, amber, lime, teal, sky, indigo, violet, pink, orange, mint — vivid on navy.
-  static let palette: [Double] = [0.0, 0.11, 0.25, 0.47, 0.57, 0.68, 0.78, 0.92, 0.06, 0.38]
+  /// Ten hues in color-wheel order (coral → orange → amber → lime → green → sky → blue → indigo →
+  /// violet → pink): neighbors on the map sit next to each other on the wheel yet stay distinct.
+  static let palette: [Double] = [0.0, 0.08, 0.14, 0.26, 0.40, 0.53, 0.61, 0.70, 0.80, 0.90]
 
   static func topColor(index: Int, node: SizeNode) -> Color {
-    color(hue: palette[index % palette.count], depth: 1, node: node)
+    color(hue: palette[index % palette.count], depth: 1, tone: 0, node: node)
   }
 
-  static func color(hue: Double, depth: Int, node: SizeNode, lift: Double = 0) -> Color {
-    if node.isAggregate { return Color.gray.opacity(0.45 + lift) }
-    let wrapped = hue - floor(hue)
+  static func color(hue: Double, depth: Int, tone: Int, node: SizeNode, lift: Double = 0) -> Color {
+    if node.isAggregate { return Color(white: 0.55 + lift, opacity: 0.55) }
+    // Tiny analogous shift per tone (never accumulated across levels).
+    let shifted = hue + Double(tone - 1) * 0.012 * (tone == 0 && depth == 1 ? 0 : 1)
+    let level = Double(depth - 1)
+    let saturation = max(0.42, 0.80 - level * 0.08) * (node.isDirectory ? 1 : 0.65)
+    let brightness = min(1, 0.96 - Double(tone) * 0.08 + level * 0.015)
     return Color(
-      hue: wrapped, saturation: (node.isDirectory ? 0.72 : 0.45) - lift,
-      brightness: min(1, max(0.5, 1.0 - Double(depth - 1) * 0.09) + lift))
+      hue: shifted - floor(shifted), saturation: max(0.18, saturation - lift),
+      brightness: min(1, brightness + lift))
   }
 
   static func shape(_ arc: Arc, center: CGPoint, ring: Double) -> Path {
