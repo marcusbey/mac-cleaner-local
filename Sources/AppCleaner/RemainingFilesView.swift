@@ -20,8 +20,8 @@ struct RemainingFilesView: View {
     VStack(alignment: .leading, spacing: 18) {
       HStack {
         VStack(alignment: .leading, spacing: 8) {
-          Text("Remaining Files").font(.largeTitle.bold())
-          Text("Review possible leftovers from applications no longer found on this Mac.")
+          Text("App Leftovers").font(.largeTitle.bold())
+          Text("Settings, caches, and support files left behind by apps you already deleted.")
             .foregroundStyle(.secondary)
         }
         Spacer()
@@ -29,21 +29,23 @@ struct RemainingFilesView: View {
       }
       HStack {
         Image(systemName: "magnifyingglass")
-        TextField("Search remaining files", text: $query).textFieldStyle(.plain)
+        TextField("Search leftovers", text: $query).textFieldStyle(.plain)
         Picker("Sort", selection: $largest) {
           Text("Largest first").tag(true)
           Text("Name").tag(false)
         }.frame(width: 180)
       }.padding(12).background(panel, in: RoundedRectangle(cornerRadius: 10))
-      Text(
-        "Nothing is selected automatically. These are candidates, not proven unused files. Command-line tools and shared components may still own this data. Review each path before removal."
-      ).font(.callout).foregroundStyle(.secondary)
+      InfoCard(
+        symbol: "questionmark.circle",
+        title: "How it works",
+        text:
+          "Dragging an app to Trash leaves its data in your Library. This finds folders named after an app (like com.spotify.client) when that app is no longer installed or running. Nothing is selected for you: command-line tools and shared components can still use some of these, so check each path before removing.")
       HStack {
         Text("\(visible.count) candidates · \(size(visible.reduce(0){$0 + max(0,$1.bytes)}))").font(
           .headline)
         Spacer()
-        Button("Select visible") { selected.formUnion(visible.map(\.id)) }.disabled(visible.isEmpty)
-        Button("Clear selection") { selected = [] }.disabled(selected.isEmpty)
+        Button("Select All") { selected.formUnion(visible.map(\.id)) }.disabled(visible.isEmpty)
+        Button("Deselect All") { selected = [] }.disabled(selected.isEmpty)
       }
       if model.scanning || model.scanningRemaining {
         Spacer()

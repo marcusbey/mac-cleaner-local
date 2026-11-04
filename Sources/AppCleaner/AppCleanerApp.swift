@@ -32,10 +32,10 @@ enum Section: String, CaseIterable {
   case spaceMap = "Space Map"
   case aiModels = "AI Models"
   case applications = "Applications"
-  case startup = "Startup Programs"
+  case startup = "Startup Items"
   case extensions = "Extensions"
-  case remaining = "Remaining Files"
-  case updates = "Updates"
+  case remaining = "App Leftovers"
+  case updates = "App Updates"
   var icon: String {
     switch self {
     case .memory: "memorychip"
@@ -86,6 +86,8 @@ struct ContentView: View {
       } else if section == .applications {
         applicationList
         details
+      } else if section == .startup {
+        StartupItemsView()
       } else if section == .remaining {
         RemainingFilesView(model: model)
       } else if section == .updates {
@@ -116,34 +118,7 @@ struct ContentView: View {
     }
   }
   var sidebar: some View {
-    VStack(spacing: 4) {
-      Spacer().frame(height: 22)
-      ForEach(Section.allCases, id: \.self) { item in
-        Button {
-          section = item
-          loadUtility()
-        } label: {
-          VStack(spacing: 7) {
-            Image(systemName: item.icon).font(.system(size: 20))
-            Text(item.rawValue).font(.system(size: 13, weight: .medium)).lineLimit(2).fixedSize(
-              horizontal: false, vertical: true
-            ).multilineTextAlignment(
-              .center)
-          }.frame(width: 104, height: 54)
-            .contentShape(RoundedRectangle(cornerRadius: 10))
-            .background(
-              section == item ? Color.blue.opacity(0.25) : .clear,
-              in: RoundedRectangle(cornerRadius: 10)
-            )
-            .overlay(RoundedRectangle(cornerRadius: 10).stroke(section == item ? line : .clear))
-        }.buttonStyle(.plain).foregroundStyle(section == item ? .white : Color.white.opacity(0.65))
-      }
-      Spacer()
-      Image(systemName: "sparkles").font(.title)
-      Text("LOCAL EDITION").font(.system(size: 10, weight: .bold, design: .rounded)).tracking(1.5)
-        .foregroundStyle(.secondary)
-      Text("App Cleaner").font(.headline).padding(.bottom, 22)
-    }.frame(width: 125).background(Color(red: 0.015, green: 0.075, blue: 0.12))
+    SidePanel(selection: $section) { loadUtility() }
   }
   var applicationList: some View {
     VStack(spacing: 12) {

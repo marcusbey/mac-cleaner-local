@@ -108,14 +108,14 @@ public enum QuickMemoryCleanup {
       + "\""
   }
 
-  private static func runAsAdministrator(_ shell: String) throws {
+  static func runAsAdministrator(_ shell: String) throws {
     let source = "do shell script \(appleScriptLiteral(shell)) with administrator privileges"
     let status = try execute("/usr/bin/osascript", ["-e", source])
     // osascript exits 1 for both cancel (-128) and failures; treat as cancel only when nothing ran.
     guard status == 0 else { throw status == 1 ? QuickMemoryCleanupError.cancelled : .failed(status) }
   }
 
-  @discardableResult private static func execute(_ path: String, _ arguments: [String]) throws
+  @discardableResult static func execute(_ path: String, _ arguments: [String]) throws
     -> Int32
   {
     let process = Process()

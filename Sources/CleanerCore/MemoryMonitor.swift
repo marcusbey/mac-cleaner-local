@@ -226,7 +226,7 @@ public enum MemoryMonitor {
     bundles.filter { path.hasPrefix($0 + "/") }.min { $0.count < $1.count }
   }
 
-  private static func allProcessIDs() -> [pid_t] {
+  static func allProcessIDs() -> [pid_t] {
     let estimate = proc_listallpids(nil, 0)
     guard estimate > 0 else { return [] }
     var pids = [pid_t](repeating: 0, count: Int(estimate) + 128)
@@ -236,7 +236,7 @@ public enum MemoryMonitor {
     return Array(pids.prefix(Int(max(0, count))))
   }
 
-  private static func executablePath(_ pid: pid_t) -> String? {
+  static func executablePath(_ pid: pid_t) -> String? {
     var buffer = [CChar](repeating: 0, count: 4 * Int(MAXPATHLEN))
     guard proc_pidpath(pid, &buffer, UInt32(buffer.count)) > 0 else { return nil }
     return String(cString: buffer)

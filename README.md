@@ -39,8 +39,9 @@ macOS 14 or later · Apple Silicon and Intel · MIT licensed
 **Applications**
 - Inventory of `/Applications` and `~/Applications`, grouped by vendor, sorted by name or size.
 - Uninstall reviews the app and its related files (exact bundle-ID matches in your Library) before moving them to Trash.
-- Remaining Files finds data left behind by apps that are no longer installed.
-- Update checks for Sparkle, App Store, and Electron update feeds.
+- **Startup Items**: launch agents and daemons grouped by scope (your account, all users, system), with owner app, running and at-login status, and broken leftovers whose program no longer exists. Turn items on or off (system services ask for an administrator password) or remove your own.
+- **App Leftovers**: data left in your Library by apps that are no longer installed.
+- **App Updates**: checks each app's Sparkle feed, the App Store, or its Electron release feed; Open Update goes to the publisher or App Store page.
 
 Everything is moved to Trash, never permanently deleted. Moving to Trash frees space only after you empty it.
 
