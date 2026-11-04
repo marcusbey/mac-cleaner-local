@@ -1,3 +1,5 @@
+<img src="Resources/AppIcon.png" width="96" alt="Mac Cleaner Local icon">
+
 # Mac Cleaner Local
 
 A native macOS utility for freeing memory, finding what fills your disk, and uninstalling apps with their leftovers. SwiftUI and Foundation only, no third-party dependencies, nothing leaves your Mac.
@@ -15,17 +17,24 @@ macOS 14 or later · Apple Silicon and Intel · MIT licensed
 **Space Map**
 - Scans your home folder, the whole data volume, or any folder with `getattrlistbulk(2)`.
 - A sunburst grows live while scanning: rings are folder depth, angle is allocated size. Hover for name and size, click to drill in, click the center to go up.
-- Sorted list with size and share; right-click for Reveal in Finder, Open, Copy Path, or Move to Trash.
+- Sorted list with size and share; right-click for Reveal in Finder, Open, Copy Path, or Move to Trash. **Rescan** repeats the last scan.
 - Stays on one volume and never follows symlinks. Items under 1 MB are merged into "smaller items". Hard links may be counted more than once.
 
 **Disk Cleanup**
-- Scans `~/Library/Caches`, `~/Library/Logs`, and large files in Downloads or a folder you choose.
+- Four scans: **Caches & Logs** (`~/Library/Caches`, `~/Library/Logs`), **Developer** (Xcode DerivedData, device support, simulator caches, archives, npm/pnpm/yarn/bun/Gradle/Cargo/Go/`~/.cache` package caches, old iPhone updates, Mail downloads), **Dependencies** (`node_modules` in a projects folder you choose), and **Large Files** (over 100 MB in a folder you choose).
+- **Rescan** after removing items; the Trash size is shown because Trash frees space only when emptied.
 - Every item is rated **Safe**, **Likely safe**, or **Review** with a reason, using fixed rules in [`DiskSafety.swift`](Sources/CleanerCore/DiskSafety.swift):
   - Caches are safe (apps recreate them); known tool download caches are likely safe (they re-download).
   - Logs are safe; logs from the last day are likely safe.
   - Installers are likely safe only when a matching app is installed in Applications.
   - Other files in Downloads need review; Spotlight's last-opened date is shown to help.
+  - `node_modules` unchanged for 30+ days are likely safe; recent ones and anything inside a git worktree need review.
 - Items owned by running apps are skipped. Each item is checked again before it moves, and one failing item never blocks the rest.
+
+**AI Models**
+- Finds local models from Ollama, LM Studio, Hugging Face, GPT4All, Jan, Whisper, and model files apps keep in Application Support (GGUF, Safetensors, GGML, ONNX, PyTorch, Core ML).
+- Cards show type (language, speech, image, embedding), format, parameter count, quantization, size, and last update.
+- Reveal in Finder or Move to Trash. Ollama layers shared with other models are kept.
 
 **Applications**
 - Inventory of `/Applications` and `~/Applications`, grouped by vendor, sorted by name or size.
@@ -54,7 +63,7 @@ swift test
 ./scripts/packaging/create-dmg.sh "dist/universal/App Cleaner Local.app" dist/App-Cleaner.dmg "App Cleaner"
 ```
 
-Open `Package.swift` in Xcode to develop. `electron/` contains an optional Electron launcher that wraps the native app.
+Open `Package.swift` in Xcode to develop. `swift scripts/make-icon.swift Resources/AppIcon.icns` regenerates the icon. `electron/` contains an optional Electron launcher that wraps the native app.
 
 ## License
 

@@ -2,7 +2,30 @@ import AppKit
 import CleanerCore
 import SwiftUI
 
+enum CleanupScanKind: String, CaseIterable, Identifiable {
+  case junk = "Caches & Logs"
+  case developer = "Developer"
+  case dependencies = "Dependencies"
+  case largeFiles = "Large Files"
+  var id: String { rawValue }
+  var needsFolder: Bool { self == .dependencies || self == .largeFiles }
+  var summary: String {
+    switch self {
+    case .junk: "App caches in ~/Library/Caches and logs in ~/Library/Logs."
+    case .developer: "Xcode build data, simulator caches, and npm/pnpm/yarn/Gradle/Cargo/Go/pip caches."
+    case .dependencies: "node_modules folders in your projects. Reinstalling restores them."
+    case .largeFiles: "Files over 100 MB in the folder you choose."
+    }
+  }
+}
+
 @MainActor private final class DiskCleanupModel: ObservableObject {
+  @Published var kind: CleanupScanKind = .junk
+  /// The kind the current list came from, so the button can offer Rescan.
+  @Published var scannedKind: CleanupScanKind?
+  @Published var trashBytes: Int64?
+  @Published var projectsFolder = FileManager.default.homeDirectoryForCurrentUser
+    .appendingPathComponent("Desktop", isDirectory: true)
   @Published var volume: DiskVolumeUsage?
   @Published var candidates: [DiskCleanupCandidate] = []
   @Published var ratings: [String: DiskCleanupSafety] = [:]
@@ -26,18 +49,30 @@ import SwiftUI
 
   func refreshVolume() {
     volume = try? DiskVolumeUsage.read()
-  }
-
-  func scanJunk() {
-    beginScan {
-      DiskCleanupScanner.scanJunk()
+    let trash = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".Trash")
+    Task {
+      let tree = await Task.detached(priority: .utility) { SizeTree.scan(trash, minimumShare: 1, maxChildren: 0) }.value
+      // Unreadable without Full Disk Access; show "Open Trash" instead of a wrong 0.
+      trashBytes = tree.unreadableFolders.contains(trash.path) ? nil : tree.root.bytes
     }
   }
 
-  func scanDownloads() {
-    let folder = downloadsFolder
+  var folder: URL {
+    get { kind == .dependencies ? projectsFolder : downloadsFolder }
+    set { if kind == .dependencies { projectsFolder = newValue } else { downloadsFolder = newValue } }
+  }
+
+  func scan() {
+    let scanned = kind
+    let folder = folder
+    scannedKind = scanned
     beginScan {
-      DiskCleanupScanner.scanLargeFiles(folder: folder)
+      switch scanned {
+      case .junk: DiskCleanupScanner.scanJunk()
+      case .developer: DeveloperCleanupScanner.scan()
+      case .dependencies: DeveloperCleanupScanner.scanDependencies(in: folder)
+      case .largeFiles: DiskCleanupScanner.scanLargeFiles(folder: folder)
+      }
     }
   }
 
@@ -107,7 +142,7 @@ struct DiskCleanupView: View {
       HStack {
         VStack(alignment: .leading, spacing: 7) {
           Text("Disk Cleanup").font(.largeTitle.bold())
-          Text("Review caches, logs, and large Downloads files before moving anything to Trash.")
+          Text("Find caches, developer data, old dependencies, and large files. Everything goes to Trash.")
             .foregroundStyle(.secondary)
         }
         Spacer()
@@ -131,20 +166,38 @@ struct DiskCleanupView: View {
       }
 
       HStack(spacing: 12) {
-        Button("Scan Caches & Logs", action: model.scanJunk).buttonStyle(.borderedProminent)
+        Picker("Scan", selection: $model.kind) {
+          ForEach(CleanupScanKind.allCases) { Text($0.rawValue).tag($0) }
+        }.pickerStyle(.segmented).labelsHidden().fixedSize()
           .disabled(model.scanning || removing)
-        Button("Scan Large Downloads", action: model.scanDownloads)
-          .disabled(model.scanning || removing)
-        Button("Choose Downloads Folder…", action: chooseFolder)
-          .disabled(model.scanning || removing)
+        Button {
+          model.scan()
+        } label: {
+          Label(
+            model.scannedKind == model.kind ? "Rescan" : "Scan",
+            systemImage: model.scannedKind == model.kind ? "arrow.clockwise" : "magnifyingglass")
+        }.buttonStyle(.borderedProminent).disabled(model.scanning || removing)
         Spacer()
-        Text(model.downloadsFolder.path.replacingOccurrences(of: NSHomeDirectory(), with: "~"))
-          .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+        if let trash = model.trashBytes, trash > 0 {
+          Button("Trash: \(size(trash))") {
+            NSWorkspace.shared.open(FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".Trash"))
+          }.help("Space in Trash is freed only when you empty it")
+        } else {
+          Button("Open Trash") {
+            NSWorkspace.shared.open(FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".Trash"))
+          }
+        }
       }
 
-      Text(
-        "Nothing is selected automatically. Cache and log folders may still be useful to their applications. Large Downloads are your documents; inspect every path before removal."
-      ).font(.callout).foregroundStyle(.secondary)
+      HStack(spacing: 10) {
+        Text(model.kind.summary).font(.callout).foregroundStyle(.secondary)
+        if model.kind.needsFolder {
+          Spacer()
+          Text(model.folder.path.replacingOccurrences(of: NSHomeDirectory(), with: "~"))
+            .font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+          Button("Choose Folder…", action: chooseFolder).disabled(model.scanning || removing)
+        }
+      }
 
       if model.scanning {
         Spacer()
@@ -228,7 +281,11 @@ struct DiskCleanupView: View {
         .font(.title3).foregroundStyle(.cyan)
       VStack(alignment: .leading, spacing: 5) {
         HStack {
-          Text(candidate.url.lastPathComponent).font(.headline)
+          Text(
+            candidate.category == .dependencies
+              ? candidate.url.pathComponents.dropLast().suffix(2).joined(separator: "/")
+              : candidate.url.lastPathComponent
+          ).font(.headline)
           Text(candidate.category.rawValue).font(.caption).foregroundStyle(.secondary)
         }
         let safety = model.rating(candidate)
@@ -297,9 +354,9 @@ struct DiskCleanupView: View {
     panel.canChooseDirectories = true
     panel.canChooseFiles = false
     panel.allowsMultipleSelection = false
-    panel.directoryURL = model.downloadsFolder
+    panel.directoryURL = model.folder
     if panel.runModal() == .OK, let url = panel.url {
-      model.downloadsFolder = url
+      model.folder = url
       selected = []
     }
   }

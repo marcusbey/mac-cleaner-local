@@ -6,6 +6,8 @@ public enum DiskCleanupCategory: String, CaseIterable, Sendable {
   case cache = "Caches"
   case logs = "Logs"
   case largeDownload = "Large Downloads"
+  case developer = "Developer"
+  case dependencies = "Dependencies"
 }
 
 public struct DiskCleanupRoot: Sendable, Hashable {
@@ -523,6 +525,12 @@ public enum DiskCleanupTrashService {
         && candidate.url.deletingLastPathComponent() == candidate.scopeRoot
     case .largeDownload:
       return !hasPackageAncestor(candidate.url, below: candidate.scopeRoot)
+    case .developer:
+      return candidate.url.deletingLastPathComponent() == candidate.scopeRoot
+        && DeveloperCleanupScanner.location(for: candidate) != nil
+    case .dependencies:
+      return candidate.url.lastPathComponent == "node_modules"
+        && !hasPackageAncestor(candidate.url, below: candidate.scopeRoot)
     }
   }
 

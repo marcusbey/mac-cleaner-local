@@ -10,8 +10,11 @@ import SwiftUI
   @Published var scannedBytes: Int64 = 0
   @Published var currentFolder = ""
   @Published var startedAt = Date()
+  /// Last time the scanner reported anything; a long gap usually means a macOS permission prompt.
+  @Published var lastProgressAt = Date()
   /// Bytes in use on the volume, so whole-disk scans can show a real progress fraction.
   @Published var expectedBytes: Int64?
+  private var lastWholeDisk = false
   @Published var unreadable: [String] = []
   @Published var target = FileManager.default.homeDirectoryForCurrentUser
   @Published var message = ""
@@ -47,7 +50,9 @@ import SwiftUI
     scannedBytes = 0
     currentFolder = url.path
     startedAt = Date()
+    lastProgressAt = Date()
     expectedBytes = wholeDisk ? (try? DiskVolumeUsage.read(for: url)).map(\.usedBytes) : nil
+    lastWholeDisk = wholeDisk
     scanning = true
     task = Task {
       let worker = Task.detached(priority: .userInitiated) { [weak self] in
@@ -77,8 +82,10 @@ import SwiftUI
     scannedFiles = update.files
     scannedBytes = update.bytes
     currentFolder = update.currentFolder
+    lastProgressAt = Date()
   }
   func cancel() { task?.cancel() }
+  func rescan() { scan(target, wholeDisk: lastWholeDisk) }
   func open(_ node: SizeNode) {
     guard node.isDirectory, !node.children.isEmpty else { return }
     path = trail.dropFirst().map(\.id) + [node.id]
@@ -165,8 +172,14 @@ struct SpaceMapView: View {
       if model.scanning {
         Button("Cancel", action: model.cancel)
       } else {
+        if model.root != nil {
+          Button {
+            model.rescan()
+          } label: {
+            Label("Rescan", systemImage: "arrow.clockwise")
+          }.buttonStyle(.borderedProminent).help("Scan the same location again")
+        }
         Button("Home Folder") { model.scan(FileManager.default.homeDirectoryForCurrentUser) }
-          .buttonStyle(.borderedProminent)
         Button("Entire Disk") {
           model.scan(URL(fileURLWithPath: "/System/Volumes/Data"), wholeDisk: true)
         }
@@ -194,6 +207,12 @@ struct SpaceMapView: View {
         Text(model.currentFolder.replacingOccurrences(of: NSHomeDirectory(), with: "~"))
           .font(.caption.monospaced()).foregroundStyle(.secondary).lineLimit(1)
           .truncationMode(.middle)
+        if context.date.timeIntervalSince(model.lastProgressAt) > 8 {
+          Label(
+            "No progress for a few seconds. macOS may be asking for permission to read a folder; check for a dialog.",
+            systemImage: "hand.raised.fill"
+          ).font(.caption).foregroundStyle(.orange)
+        }
       }.padding(14).background(panel, in: RoundedRectangle(cornerRadius: 10))
         .overlay(RoundedRectangle(cornerRadius: 10).stroke(line))
     }
@@ -230,7 +249,7 @@ struct SpaceMapView: View {
     ScrollView {
       LazyVStack(spacing: 6) {
         ForEach(Array(focus.children.enumerated()), id: \.element.id) { index, node in
-          row(node, color: Sunburst.color(index: index, depth: 1, node: node), total: focus.bytes)
+          row(node, color: Sunburst.topColor(index: index, node: node), total: focus.bytes)
         }
       }
     }
@@ -316,7 +335,7 @@ private struct Sunburst: View {
     let depth: Int
     let start: Double
     let end: Double
-    let color: Color
+    let hue: Double
   }
 
   var body: some View {
@@ -327,20 +346,34 @@ private struct Sunburst: View {
       let arcs = Self.arcs(for: focus)
       ZStack {
         Canvas { context, _ in
+          var highlight: Path?
           for arc in arcs {
+            let shape = Self.shape(arc, center: center, ring: ring)
             let inner = ring * Double(arc.depth)
-            var shape = Path()
-            shape.addArc(
-              center: center, radius: inner + ring - 1, startAngle: .radians(arc.start),
-              endAngle: .radians(arc.end), clockwise: false)
-            shape.addArc(
-              center: center, radius: inner, startAngle: .radians(arc.end),
-              endAngle: .radians(arc.start), clockwise: true)
-            shape.closeSubpath()
-            let highlighted = hovered?.id == arc.node.id
-            context.fill(shape, with: .color(highlighted ? .white : arc.color))
-            context.stroke(shape, with: .color(navy), lineWidth: 0.75)
+            // Lighter toward the center of each ring gives the tiles a little depth.
+            context.fill(
+              shape,
+              with: .radialGradient(
+                Gradient(colors: [
+                  Self.color(hue: arc.hue, depth: arc.depth, node: arc.node, lift: 0.1),
+                  Self.color(hue: arc.hue, depth: arc.depth, node: arc.node),
+                ]), center: center, startRadius: inner, endRadius: inner + ring))
+            context.stroke(shape, with: .color(.white.opacity(0.22)), lineWidth: 0.8)
+            if hovered?.id == arc.node.id { highlight = shape }
           }
+          if let highlight {
+            context.fill(highlight, with: .color(.white.opacity(0.25)))
+            context.stroke(highlight, with: .color(.white), lineWidth: 2.5)
+          }
+          let hub = Path(
+            ellipseIn: CGRect(x: center.x - ring + 3, y: center.y - ring + 3, width: 2 * ring - 6, height: 2 * ring - 6))
+          context.fill(
+            hub,
+            with: .linearGradient(
+              Gradient(colors: [Color(red: 0.10, green: 0.22, blue: 0.36), panel]),
+              startPoint: CGPoint(x: center.x, y: center.y - ring),
+              endPoint: CGPoint(x: center.x, y: center.y + ring)))
+          context.stroke(hub, with: .color(.white.opacity(0.22)), lineWidth: 0.8)
         }
         VStack(spacing: 4) {
           Text(focus.name).font(.headline).lineLimit(1).truncationMode(.middle)
@@ -367,7 +400,7 @@ private struct Sunburst: View {
 
   static func arcs(for focus: SizeNode) -> [Arc] {
     var result: [Arc] = []
-    func walk(_ node: SizeNode, depth: Int, start: Double, sweep: Double, hue: Int?) {
+    func walk(_ node: SizeNode, depth: Int, start: Double, sweep: Double, hue: Double?) {
       guard depth <= Self.depth, node.bytes > 0 else { return }
       var angle = start
       for (index, child) in node.children.enumerated() {
@@ -376,12 +409,15 @@ private struct Sunburst: View {
           angle += childSweep
           continue
         }
-        let colorIndex = hue ?? index
+        // Top level picks a palette color; deeper levels drift around the parent's hue
+        // so a big folder shows variety instead of one flat block.
+        let childHue =
+          hue.map { $0 + (Double(index % 5) - 2) * 0.022 } ?? palette[index % palette.count]
         result.append(
           Arc(
             node: child, depth: depth, start: angle - .pi / 2, end: angle + childSweep - .pi / 2,
-            color: color(index: colorIndex, depth: depth, node: child)))
-        walk(child, depth: depth + 1, start: angle, sweep: childSweep, hue: colorIndex)
+            hue: childHue))
+        walk(child, depth: depth + 1, start: angle, sweep: childSweep, hue: childHue)
         angle += childSweep
       }
     }
@@ -389,12 +425,32 @@ private struct Sunburst: View {
     return result
   }
 
-  static func color(index: Int, depth: Int, node: SizeNode) -> Color {
-    if node.isAggregate { return Color.gray.opacity(0.55) }
-    let hue = (Double(index) * 0.618_034).truncatingRemainder(dividingBy: 1)
+  /// Coral, amber, lime, teal, sky, indigo, violet, pink, orange, mint — vivid on navy.
+  static let palette: [Double] = [0.0, 0.11, 0.25, 0.47, 0.57, 0.68, 0.78, 0.92, 0.06, 0.38]
+
+  static func topColor(index: Int, node: SizeNode) -> Color {
+    color(hue: palette[index % palette.count], depth: 1, node: node)
+  }
+
+  static func color(hue: Double, depth: Int, node: SizeNode, lift: Double = 0) -> Color {
+    if node.isAggregate { return Color.gray.opacity(0.45 + lift) }
+    let wrapped = hue - floor(hue)
     return Color(
-      hue: hue, saturation: node.isDirectory ? 0.62 : 0.35,
-      brightness: max(0.45, 0.95 - Double(depth - 1) * 0.12))
+      hue: wrapped, saturation: (node.isDirectory ? 0.72 : 0.45) - lift,
+      brightness: min(1, max(0.5, 1.0 - Double(depth - 1) * 0.09) + lift))
+  }
+
+  static func shape(_ arc: Arc, center: CGPoint, ring: Double) -> Path {
+    let inner = ring * Double(arc.depth)
+    var shape = Path()
+    shape.addArc(
+      center: center, radius: inner + ring - 1, startAngle: .radians(arc.start),
+      endAngle: .radians(arc.end), clockwise: false)
+    shape.addArc(
+      center: center, radius: inner, startAngle: .radians(arc.end),
+      endAngle: .radians(arc.start), clockwise: true)
+    shape.closeSubpath()
+    return shape
   }
 
   static func hit(_ point: CGPoint, center: CGPoint, ring: Double, arcs: [Arc]) -> SizeNode? {

@@ -41,6 +41,26 @@ public struct DiskCleanupSafety: Sendable, Equatable {
           note: "Log written in the last day. Safe unless you are troubleshooting this app right now.")
       }
       return Self(level: .safe, note: "Old diagnostic log. Only used for troubleshooting.")
+    case .developer:
+      guard let location = DeveloperCleanupScanner.location(for: candidate) else {
+        return Self(level: .review, note: "Developer data. Review before removing.")
+      }
+      return Self(level: location.level, note: location.note)
+    case .dependencies:
+      let path = candidate.url.path
+      if path.contains("/worktrees/") || path.contains("/.worktrees/") {
+        return Self(
+          level: .review,
+          note: "Inside a git worktree. Leave it if that branch is still in use; reinstall restores it.")
+      }
+      if let age, age >= 30 {
+        return Self(
+          level: .likelySafe,
+          note: "Project dependencies unchanged for \(Int(age)) days. Run npm/pnpm/yarn install to restore them.")
+      }
+      return Self(
+        level: .review,
+        note: "Dependencies changed recently, so this project is probably active. Removing breaks it until you reinstall.")
     case .largeDownload:
       let usage = openedNote(candidate.lastOpened, now: now)
       if installerExtensions.contains(candidate.url.pathExtension.lowercased()) {

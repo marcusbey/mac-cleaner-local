@@ -30,6 +30,7 @@ enum Section: String, CaseIterable {
   case memory = "Memory"
   case cleanup = "Disk Cleanup"
   case spaceMap = "Space Map"
+  case aiModels = "AI Models"
   case applications = "Applications"
   case startup = "Startup Programs"
   case extensions = "Extensions"
@@ -40,6 +41,7 @@ enum Section: String, CaseIterable {
     case .memory: "memorychip"
     case .cleanup: "internaldrive"
     case .spaceMap: "chart.pie"
+    case .aiModels: "cpu"
     case .applications: "app.badge"
     case .startup: "power"
     case .extensions: "puzzlepiece.extension"
@@ -79,6 +81,8 @@ struct ContentView: View {
         DiskCleanupView()
       } else if section == .spaceMap {
         SpaceMapView()
+      } else if section == .aiModels {
+        AIModelsView()
       } else if section == .applications {
         applicationList
         details
@@ -112,20 +116,20 @@ struct ContentView: View {
     }
   }
   var sidebar: some View {
-    VStack(spacing: 7) {
-      Spacer().frame(height: 25)
+    VStack(spacing: 4) {
+      Spacer().frame(height: 22)
       ForEach(Section.allCases, id: \.self) { item in
         Button {
           section = item
           loadUtility()
         } label: {
-          VStack(spacing: 10) {
-            Image(systemName: item.icon).font(.system(size: 22))
+          VStack(spacing: 7) {
+            Image(systemName: item.icon).font(.system(size: 20))
             Text(item.rawValue).font(.system(size: 13, weight: .medium)).lineLimit(2).fixedSize(
               horizontal: false, vertical: true
             ).multilineTextAlignment(
               .center)
-          }.frame(width: 104, height: 60)
+          }.frame(width: 104, height: 54)
             .contentShape(RoundedRectangle(cornerRadius: 10))
             .background(
               section == item ? Color.blue.opacity(0.25) : .clear,
@@ -523,6 +527,7 @@ struct ContentView: View {
     case .memory: "Live memory usage"
     case .cleanup: "Review files before cleanup"
     case .spaceMap: "Disk space map"
+    case .aiModels: "Local AI models"
     }
   }
   func loadUtility() {
