@@ -1,0 +1,409 @@
+import AppKit
+import CleanerCore
+import SwiftUI
+
+@MainActor private final class SpaceMapModel: ObservableObject {
+  @Published var root: SizeNode?
+  @Published var path: [String] = []
+  @Published var scanning = false
+  @Published var scannedFiles = 0
+  @Published var scannedBytes: Int64 = 0
+  @Published var currentFolder = ""
+  @Published var startedAt = Date()
+  /// Bytes in use on the volume, so whole-disk scans can show a real progress fraction.
+  @Published var expectedBytes: Int64?
+  @Published var unreadable: [String] = []
+  @Published var target = FileManager.default.homeDirectoryForCurrentUser
+  @Published var message = ""
+  private var task: Task<Void, Never>?
+
+  /// Current drill-down node, resolved from ids so it stays valid after the tree changes.
+  var focus: SizeNode? {
+    guard var node = root else { return nil }
+    for id in path {
+      guard let next = node.children.first(where: { $0.id == id }) else { break }
+      node = next
+    }
+    return node
+  }
+  var trail: [SizeNode] {
+    guard var node = root else { return [] }
+    var result = [node]
+    for id in path {
+      guard let next = node.children.first(where: { $0.id == id }) else { break }
+      node = next
+      result.append(node)
+    }
+    return result
+  }
+
+  func scan(_ url: URL, wholeDisk: Bool = false) {
+    task?.cancel()
+    target = url
+    root = nil
+    path = []
+    unreadable = []
+    scannedFiles = 0
+    scannedBytes = 0
+    currentFolder = url.path
+    startedAt = Date()
+    expectedBytes = wholeDisk ? (try? DiskVolumeUsage.read(for: url)).map(\.usedBytes) : nil
+    scanning = true
+    task = Task {
+      let worker = Task.detached(priority: .userInitiated) { [weak self] in
+        SizeTree.scan(url, minimumBytes: 1_000_000) { update in
+          Task { @MainActor in self?.apply(update) }
+        }
+      }
+      let result = await withTaskCancellationHandler {
+        await worker.value
+      } onCancel: {
+        worker.cancel()
+      }
+      scanning = false
+      guard !result.cancelled else {
+        message = "Scan cancelled. The map shows what was measured so far."
+        return
+      }
+      root = result.root
+      unreadable = result.unreadableFolders
+      scannedFiles = result.fileCount
+      scannedBytes = result.root.bytes
+    }
+  }
+  private func apply(_ update: SizeTreeProgress) {
+    guard scanning else { return }
+    root = update.partial
+    scannedFiles = update.files
+    scannedBytes = update.bytes
+    currentFolder = update.currentFolder
+  }
+  func cancel() { task?.cancel() }
+  func open(_ node: SizeNode) {
+    guard node.isDirectory, !node.children.isEmpty else { return }
+    path = trail.dropFirst().map(\.id) + [node.id]
+  }
+  func up(to index: Int) { path = Array(path.prefix(index)) }
+  func trash(_ node: SizeNode) {
+    guard let url = node.url else { return }
+    Task {
+      let result = await Task.detached { Result { try SizeTree.moveToTrash(url) } }.value
+      switch result {
+      case .success:
+        root = root?.removing(id: node.id)
+        message = "Moved \(node.name) (\(size(node.bytes))) to Trash. Empty Trash to free the space."
+      case .failure(let error): message = error.localizedDescription
+      }
+    }
+  }
+}
+
+struct SpaceMapView: View {
+  @StateObject private var model = SpaceMapModel()
+  @State private var hovered: SizeNode?
+  /// Last segment under the pointer; survives the pointer moving into the context menu.
+  @State private var menuTarget: SizeNode?
+  @State private var pendingTrash: SizeNode?
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 16) {
+      header
+      if model.scanning { scanStatus }
+      if let focus = model.focus {
+        breadcrumb
+        HStack(alignment: .top, spacing: 24) {
+          VStack(spacing: 10) {
+            Sunburst(focus: focus, hovered: $hovered, onOpen: model.open) {
+              if model.path.count > 0 { model.up(to: model.path.count - 1) }
+            }
+            .onChange(of: hovered?.id) { _, _ in if let hovered { menuTarget = hovered } }
+            .contextMenu { if let node = menuTarget { menu(for: node) } }
+            .frame(minWidth: 380, maxWidth: 560).aspectRatio(1, contentMode: .fit)
+            Text(hovered.map { "\($0.name) · \(size($0.bytes))" } ?? "Hover a segment · click to open")
+              .font(.callout).foregroundStyle(.secondary).lineLimit(1)
+          }
+          list(focus)
+        }
+      } else if !model.scanning {
+        Spacer()
+        ContentUnavailableView(
+          "See what fills your disk", systemImage: "chart.pie",
+          description: Text("Scan your home folder, the whole disk, or any folder."))
+        Spacer()
+      }
+    }.padding(28).frame(maxWidth: .infinity, maxHeight: .infinity)
+      .confirmationDialog(
+        "Move \(pendingTrash?.name ?? "") to Trash?", isPresented: Binding(get: { pendingTrash != nil }, set: { if !$0 { pendingTrash = nil } }),
+        presenting: pendingTrash
+      ) { node in
+        Button("Move to Trash (\(size(node.bytes)))", role: .destructive) {
+          model.trash(node)
+          pendingTrash = nil
+        }
+        Button("Cancel", role: .cancel) { pendingTrash = nil }
+      } message: { node in
+        Text(node.url?.path ?? "")
+      }
+      .alert(
+        "Space Map",
+        isPresented: Binding(get: { !model.message.isEmpty }, set: { if !$0 { model.message = "" } })
+      ) {
+        Button("OK") { model.message = "" }
+      } message: {
+        Text(model.message)
+      }
+  }
+
+  private var header: some View {
+    HStack {
+      VStack(alignment: .leading, spacing: 6) {
+        Text("Space Map").font(.largeTitle.bold())
+        Text("Every folder and file sized by the disk space it actually uses.")
+          .foregroundStyle(.secondary)
+      }
+      Spacer()
+      if model.scanning {
+        Button("Cancel", action: model.cancel)
+      } else {
+        Button("Home Folder") { model.scan(FileManager.default.homeDirectoryForCurrentUser) }
+          .buttonStyle(.borderedProminent)
+        Button("Entire Disk") {
+          model.scan(URL(fileURLWithPath: "/System/Volumes/Data"), wholeDisk: true)
+        }
+        Button("Choose Folder…", action: chooseFolder)
+      }
+    }
+  }
+
+  private var scanStatus: some View {
+    TimelineView(.periodic(from: .now, by: 1)) { context in
+      VStack(alignment: .leading, spacing: 8) {
+        HStack(spacing: 10) {
+          ProgressView().controlSize(.small)
+          Text("Scanning").font(.headline)
+          Text("\(model.scannedFiles.formatted()) files · \(size(model.scannedBytes)) found")
+            .monospacedDigit()
+          Spacer()
+          Text(elapsed(since: model.startedAt, now: context.date)).monospacedDigit()
+            .foregroundStyle(.secondary)
+        }
+        if let expected = model.expectedBytes, expected > 0 {
+          ProgressView(value: min(1, Double(model.scannedBytes) / Double(expected)))
+            .tint(.cyan)
+        }
+        Text(model.currentFolder.replacingOccurrences(of: NSHomeDirectory(), with: "~"))
+          .font(.caption.monospaced()).foregroundStyle(.secondary).lineLimit(1)
+          .truncationMode(.middle)
+      }.padding(14).background(panel, in: RoundedRectangle(cornerRadius: 10))
+        .overlay(RoundedRectangle(cornerRadius: 10).stroke(line))
+    }
+  }
+
+  private func elapsed(since start: Date, now: Date) -> String {
+    let seconds = max(0, Int(now.timeIntervalSince(start)))
+    return String(format: "%d:%02d", seconds / 60, seconds % 60)
+  }
+
+  private var breadcrumb: some View {
+    HStack(spacing: 4) {
+      ForEach(Array(model.trail.enumerated()), id: \.element.id) { index, node in
+        if index > 0 { Image(systemName: "chevron.right").font(.caption).foregroundStyle(.secondary) }
+        Button(index == 0 ? model.target.path.replacingOccurrences(of: NSHomeDirectory(), with: "~") : node.name) {
+          model.up(to: index)
+        }.buttonStyle(.plain).foregroundStyle(index == model.trail.count - 1 ? .white : .secondary)
+      }
+      Spacer()
+      if !model.scanning {
+        Text("\(size(model.focus?.bytes ?? 0)) · \(model.scannedFiles.formatted()) files scanned")
+          .font(.caption).foregroundStyle(.secondary)
+      }
+      if !model.unreadable.isEmpty {
+        Button("\(model.unreadable.count) folders unreadable · Grant Full Disk Access") {
+          NSWorkspace.shared.open(
+            URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles")!)
+        }.font(.caption).foregroundStyle(.orange).buttonStyle(.plain)
+      }
+    }.font(.callout)
+  }
+
+  private func list(_ focus: SizeNode) -> some View {
+    ScrollView {
+      LazyVStack(spacing: 6) {
+        ForEach(Array(focus.children.enumerated()), id: \.element.id) { index, node in
+          row(node, color: Sunburst.color(index: index, depth: 1, node: node), total: focus.bytes)
+        }
+      }
+    }
+  }
+
+  private func row(_ node: SizeNode, color: Color, total: Int64) -> some View {
+    HStack(spacing: 10) {
+      RoundedRectangle(cornerRadius: 3).fill(color).frame(width: 10, height: 10)
+      Image(systemName: node.isAggregate ? "ellipsis.circle" : node.isDirectory ? "folder.fill" : "doc")
+        .foregroundStyle(.cyan).frame(width: 18)
+      VStack(alignment: .leading, spacing: 4) {
+        Text(node.name).lineLimit(1).truncationMode(.middle)
+        GeometryReader { geometry in
+          Capsule().fill(color.opacity(0.8))
+            .frame(width: geometry.size.width * share(node.bytes, of: total))
+        }.frame(height: 4)
+      }
+      Spacer(minLength: 8)
+      Text(size(node.bytes)).monospacedDigit()
+      Text(String(format: "%.1f%%", share(node.bytes, of: total) * 100)).font(.caption)
+        .foregroundStyle(.secondary).frame(width: 46, alignment: .trailing)
+      if let url = node.url {
+        Button {
+          NSWorkspace.shared.activateFileViewerSelecting([url])
+        } label: { Image(systemName: "magnifyingglass") }.help("Reveal in Finder")
+        Button {
+          pendingTrash = node
+        } label: { Image(systemName: "trash") }.help("Move to Trash")
+          .disabled(model.scanning || !SizeTree.canTrash(url))
+      }
+    }.padding(10).contentShape(Rectangle())
+      .background(hovered?.id == node.id ? Color.blue.opacity(0.25) : panel, in: RoundedRectangle(cornerRadius: 8))
+      .onTapGesture { model.open(node) }
+      .onHover { hovered = $0 ? node : nil }
+      .contextMenu { menu(for: node) }
+  }
+
+  @ViewBuilder private func menu(for node: SizeNode) -> some View {
+    if let url = node.url {
+      Text("\(node.name) · \(size(node.bytes))")
+      Button("Reveal in Finder") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
+      if node.isDirectory {
+        Button("Open Folder") { NSWorkspace.shared.open(url) }
+        Button("Show in Map") { model.open(node) }.disabled(node.children.isEmpty)
+      }
+      Button("Copy Path") {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(url.path, forType: .string)
+      }
+      Divider()
+      Button("Move to Trash…", role: .destructive) { pendingTrash = node }
+        .disabled(model.scanning || !SizeTree.canTrash(url))
+    } else {
+      Text("\(node.name) · \(size(node.bytes))")
+      Text("Merged small items; open the parent folder to see them")
+    }
+  }
+
+  private func share(_ bytes: Int64, of total: Int64) -> Double {
+    total > 0 ? min(1, Double(bytes) / Double(total)) : 0
+  }
+
+  private func chooseFolder() {
+    let panel = NSOpenPanel()
+    panel.canChooseDirectories = true
+    panel.canChooseFiles = false
+    panel.directoryURL = model.target
+    if panel.runModal() == .OK, let url = panel.url { model.scan(url) }
+  }
+}
+
+/// Rings of folders around the focused folder: angle ∝ size, ring = depth.
+private struct Sunburst: View {
+  let focus: SizeNode
+  @Binding var hovered: SizeNode?
+  let onOpen: (SizeNode) -> Void
+  let onUp: () -> Void
+  static let depth = 4
+  static let minimumSweep = 0.004  // radians; slivers below this are not drawn
+
+  struct Arc {
+    let node: SizeNode
+    let depth: Int
+    let start: Double
+    let end: Double
+    let color: Color
+  }
+
+  var body: some View {
+    GeometryReader { geometry in
+      let side = min(geometry.size.width, geometry.size.height)
+      let center = CGPoint(x: geometry.size.width / 2, y: geometry.size.height / 2)
+      let ring = side / 2 / Double(Self.depth + 1)
+      let arcs = Self.arcs(for: focus)
+      ZStack {
+        Canvas { context, _ in
+          for arc in arcs {
+            let inner = ring * Double(arc.depth)
+            var shape = Path()
+            shape.addArc(
+              center: center, radius: inner + ring - 1, startAngle: .radians(arc.start),
+              endAngle: .radians(arc.end), clockwise: false)
+            shape.addArc(
+              center: center, radius: inner, startAngle: .radians(arc.end),
+              endAngle: .radians(arc.start), clockwise: true)
+            shape.closeSubpath()
+            let highlighted = hovered?.id == arc.node.id
+            context.fill(shape, with: .color(highlighted ? .white : arc.color))
+            context.stroke(shape, with: .color(navy), lineWidth: 0.75)
+          }
+        }
+        VStack(spacing: 4) {
+          Text(focus.name).font(.headline).lineLimit(1).truncationMode(.middle)
+          Text(size(focus.bytes)).font(.title3.bold()).monospacedDigit()
+        }.frame(width: ring * 1.7)
+      }
+      .contentShape(Rectangle())
+      .onContinuousHover { phase in
+        if case .active(let point) = phase {
+          hovered = Self.hit(point, center: center, ring: ring, arcs: arcs)
+        } else {
+          hovered = nil
+        }
+      }
+      .gesture(
+        SpatialTapGesture().onEnded { value in
+          let distance = hypot(value.location.x - center.x, value.location.y - center.y)
+          if distance < ring { onUp() } else if let node = Self.hit(value.location, center: center, ring: ring, arcs: arcs) {
+            onOpen(node)
+          }
+        })
+    }
+  }
+
+  static func arcs(for focus: SizeNode) -> [Arc] {
+    var result: [Arc] = []
+    func walk(_ node: SizeNode, depth: Int, start: Double, sweep: Double, hue: Int?) {
+      guard depth <= Self.depth, node.bytes > 0 else { return }
+      var angle = start
+      for (index, child) in node.children.enumerated() {
+        let childSweep = sweep * Double(child.bytes) / Double(node.bytes)
+        guard childSweep >= minimumSweep else {
+          angle += childSweep
+          continue
+        }
+        let colorIndex = hue ?? index
+        result.append(
+          Arc(
+            node: child, depth: depth, start: angle - .pi / 2, end: angle + childSweep - .pi / 2,
+            color: color(index: colorIndex, depth: depth, node: child)))
+        walk(child, depth: depth + 1, start: angle, sweep: childSweep, hue: colorIndex)
+        angle += childSweep
+      }
+    }
+    walk(focus, depth: 1, start: 0, sweep: 2 * .pi, hue: nil)
+    return result
+  }
+
+  static func color(index: Int, depth: Int, node: SizeNode) -> Color {
+    if node.isAggregate { return Color.gray.opacity(0.55) }
+    let hue = (Double(index) * 0.618_034).truncatingRemainder(dividingBy: 1)
+    return Color(
+      hue: hue, saturation: node.isDirectory ? 0.62 : 0.35,
+      brightness: max(0.45, 0.95 - Double(depth - 1) * 0.12))
+  }
+
+  static func hit(_ point: CGPoint, center: CGPoint, ring: Double, arcs: [Arc]) -> SizeNode? {
+    let dx = point.x - center.x
+    let dy = point.y - center.y
+    let depth = Int(hypot(dx, dy) / ring)
+    guard depth >= 1 else { return nil }
+    var angle = atan2(dy, dx)
+    if angle < -.pi / 2 { angle += 2 * .pi }
+    return arcs.first { $0.depth == depth && angle >= $0.start && angle < $0.end }?.node
+  }
+}

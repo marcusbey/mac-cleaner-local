@@ -1,0 +1,8 @@
+.build/
+dist/
+.omx/
+.DS_Store
+.artifacts/
+.codebase-memory/
+
+electron/node_modules/

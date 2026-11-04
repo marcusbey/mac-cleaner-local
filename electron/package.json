@@ -1,0 +1,10 @@
+{
+  "name": "app-cleaner-desktop",
+  "productName": "App Cleaner Desktop",
+  "version": "0.3.0",
+  "description": "App Cleaner desktop launcher with bundled native macOS tools",
+  "main": "main.cjs",
+  "private": true,
+  "scripts": { "start": "electron .", "test": "node --test launcher.test.cjs", "package": "node package.cjs" },
+  "devDependencies": { "electron": "45.2.1", "@electron/packager": "20.3.0" }
+}
