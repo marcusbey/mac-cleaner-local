@@ -4,18 +4,24 @@ import SwiftUI
 
 @main struct CleanerApp: App {
   @NSApplicationDelegateAdaptor(CleanerApplicationDelegate.self) var delegate
-  @StateObject private var memoryMenu = MemoryMenuModel()
+  @StateObject private var memoryMenu = MemoryMenuModel.shared
   var body: some Scene {
-    WindowGroup(id: "main") { ContentView(memoryMenu: memoryMenu).onAppear { memoryMenu.start() } }.windowStyle(
+    WindowGroup(id: "main") { ContentView(memoryMenu: memoryMenu) }.windowStyle(
       .hiddenTitleBar
     ).defaultSize(width: 1240, height: 820)
     .commands { QuickMemoryCommands() }
-    Window("Quick Memory Clean", id:"quickMemory") {MemoryMenuView(model:memoryMenu).onAppear {memoryMenu.start()}}.windowResizability(.contentSize)
+    Window("Quick Memory Clean", id: "quickMemory") { MemoryMenuView(model: memoryMenu) }
+      .windowResizability(.contentSize)
     MenuBarExtra {
       MemoryMenuView(model: memoryMenu)
     } label: {
-      Image(systemName: memoryMenu.busy ? "sparkles" : "memorychip")
-        .accessibilityLabel("App Cleaner Quick Memory Clean")
+      // Sparkle (the app icon) plus live memory use, so the menu bar item explains itself.
+      Text(
+        memoryMenu.snapshot == nil
+          ? "\(Image(systemName: "sparkles"))"
+          : "\(Image(systemName: "sparkles")) \(Int(memoryMenu.percent.rounded()))%"
+      ).monospacedDigit()
+        .accessibilityLabel("Mac Cleaner, memory \(Int(memoryMenu.percent.rounded())) percent used")
     }.menuBarExtraStyle(.window)
   }
 }

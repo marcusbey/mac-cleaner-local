@@ -3,12 +3,20 @@ import CleanerCore
 import SwiftUI
 
 @MainActor final class MemoryMenuModel: ObservableObject {
+  /// One model for the whole app, started at launch so Auto mode works with no window open.
+  static let shared = MemoryMenuModel()
   @Published var snapshot: MemorySnapshot?
   @Published var busy = false
   @Published var result: String = "Ready when you need it"
   @Published var lastRun: Date?
   @Published var silentReady = false
   @Published var pendingQuit: pid_t?
+  @Published var openAtLogin: Bool {
+    didSet {
+      UserDefaults.standard.set(openAtLogin, forKey: "openAtLogin")
+      applyLoginItem()
+    }
+  }
   @Published var autoClean: Bool {
     didSet {
       UserDefaults.standard.set(autoClean, forKey: "memoryAutoClean")
@@ -30,6 +38,8 @@ import SwiftUI
     return 100 * Double(snapshot.approximateUsedBytes) / Double(snapshot.physicalBytes)
   }
   init() {
+    // First launch: start at login by default, as a menu-bar-only background app.
+    openAtLogin = UserDefaults.standard.object(forKey: "openAtLogin") as? Bool ?? true
     autoClean = UserDefaults.standard.bool(forKey: "memoryAutoClean")
     let stored = UserDefaults.standard.double(forKey: "memoryAutoThreshold")
     let value = stored == 0 ? 85 : min(95, max(60, stored))
@@ -52,6 +62,22 @@ import SwiftUI
       }
     }
   }
+  /// Keeps the login agent pointing at this copy of the app (it may have moved), or removes it.
+  func applyLoginItem() {
+    let agent = LoginAgent.standard
+    do {
+      if openAtLogin {
+        if let executable = Bundle.main.executablePath, agent.installedExecutable != executable {
+          try agent.install(executable: executable)
+        }
+      } else {
+        try agent.remove()
+      }
+    } catch {
+      result = "Could not update Open at login: \(error.localizedDescription)"
+    }
+  }
+
   func refresh() async {
     do {
       snapshot = try await Task.detached(priority: .utility) {
@@ -187,6 +213,8 @@ struct MemoryMenuView: View {
           ? "Flushes macOS file cache without a password. Never closes apps. Quit a heavy app above for bigger gains."
           : "Flushes macOS file cache (asks for your admin password). Auto mode needs one-time approval."
       ).font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+      Toggle("Open at login (runs in the menu bar)", isOn: $model.openAtLogin)
+        .toggleStyle(.switch).font(.caption)
       Divider()
       HStack {
         Button("Open App Cleaner") {
@@ -197,7 +225,11 @@ struct MemoryMenuView: View {
         if model.silentReady {
           Button("Require password") { model.disableSilent() }.foregroundStyle(.secondary)
         }
-        Button("Quit") { NSApp.terminate(nil) }.foregroundStyle(.secondary)
+        Button("Quit Completely") {
+          CleanerApplicationDelegate.allowQuit = true
+          NSApp.terminate(nil)
+        }.foregroundStyle(.secondary)
+          .help("Stops background monitoring and Auto mode until you open the app again")
       }.buttonStyle(.plain).font(.caption)
     }.padding(20).frame(width: 340).preferredColorScheme(.dark).background(navy)
   }
@@ -240,7 +272,59 @@ struct MemoryMenuView: View {
 }
 
 final class CleanerApplicationDelegate: NSObject, NSApplicationDelegate {
+  /// Set by Quit Completely and by logout/shutdown; ⌘Q otherwise only hides to the menu bar.
+  nonisolated(unsafe) static var allowQuit = false
+
+  func applicationDidFinishLaunching(_ notification: Notification) {
+    MainActor.assumeIsolated {
+      MemoryMenuModel.shared.start()
+      MemoryMenuModel.shared.applyLoginItem()
+    }
+    let center = NotificationCenter.default
+    for name in [NSWindow.didBecomeKeyNotification, NSWindow.willCloseNotification] {
+      center.addObserver(forName: name, object: nil, queue: .main) { _ in
+        // After the window state settles, show the Dock icon only while a real window is open.
+        DispatchQueue.main.async { Self.updateActivationPolicy() }
+      }
+    }
+    NSWorkspace.shared.notificationCenter.addObserver(
+      forName: NSWorkspace.willPowerOffNotification, object: nil, queue: .main
+    ) { _ in Self.allowQuit = true }
+    if CommandLine.arguments.contains(LoginAgent.backgroundArgument) {
+      NSApp.setActivationPolicy(.accessory)
+      // shortcut: SwiftUI opens its first window a moment after launch with no hook to suppress it
+      // on macOS 14, so keep closing it for the first seconds; upgrade to .defaultLaunchBehavior(.suppressed) at macOS 15+.
+      for delay in [0.0, 0.3, 0.8, 1.5, 3.0] {
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+          for window in Self.appWindows { window.close() }
+          NSApp.setActivationPolicy(.accessory)
+        }
+      }
+    }
+  }
+
   func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
+
+  func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+    let reason = NSAppleEventManager.shared().currentAppleEvent?
+      .attributeDescriptor(forKeyword: kAEQuitReason)
+    if Self.allowQuit || reason != nil { return .terminateNow }
+    // ⌘Q or Dock Quit: keep monitoring memory in the menu bar.
+    for window in Self.appWindows { window.close() }
+    NSApp.setActivationPolicy(.accessory)
+    return .terminateCancel
+  }
+
+  private static var appWindows: [NSWindow] {
+    NSApp.windows.filter { $0.isVisible && !($0 is NSPanel) && $0.styleMask.contains(.titled) }
+  }
+
+  private static func updateActivationPolicy() {
+    let wanted: NSApplication.ActivationPolicy = appWindows.isEmpty ? .accessory : .regular
+    guard NSApp.activationPolicy() != wanted else { return }
+    NSApp.setActivationPolicy(wanted)
+    if wanted == .regular { NSApp.activate(ignoringOtherApps: true) }
+  }
 }
 
 struct QuickMemoryCommands:Commands {

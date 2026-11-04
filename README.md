@@ -9,6 +9,7 @@ macOS 14 or later · Apple Silicon and Intel · MIT licensed
 ## Features
 
 **Memory**
+- Starts at login as a menu-bar-only app (✦ plus live memory %), so Auto mode keeps working with no window open. Closing the window or ⌘Q hides it to the menu bar; **Quit Completely** stops it. **Open at login** in the panel turns this off.
 - Menu-bar panel with memory usage, the heaviest apps (helper processes inside each app bundle are counted), and Quit with confirmation.
 - **Free up memory** runs macOS `/usr/sbin/purge`, which flushes file cache back to free RAM. It never quits apps.
 - **Automatically free up** at a 60–95% threshold: sustained for 30 seconds, at most once every 15 minutes.
