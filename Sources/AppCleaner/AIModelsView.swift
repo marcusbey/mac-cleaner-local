@@ -3,6 +3,8 @@ import CleanerCore
 import SwiftUI
 
 @MainActor private final class AIModelsModel: ObservableObject {
+  /// Lives for the whole app run, so a scan keeps going and its results stay when you switch screens.
+  static let shared = AIModelsModel()
   @Published var models: [AIModel] = []
   @Published var searched: [String] = []
   @Published var scanning = false
@@ -43,7 +45,7 @@ import SwiftUI
 }
 
 struct AIModelsView: View {
-  @StateObject private var model = AIModelsModel()
+  @ObservedObject private var model = AIModelsModel.shared
   @State private var pendingRemoval: AIModel?
 
   var body: some View {

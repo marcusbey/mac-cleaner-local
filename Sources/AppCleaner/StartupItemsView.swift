@@ -3,6 +3,8 @@ import CleanerCore
 import SwiftUI
 
 @MainActor private final class StartupItemsModel: ObservableObject {
+  /// Lives for the whole app run, so a scan keeps going and its results stay when you switch screens.
+  static let shared = StartupItemsModel()
   @Published var items: [StartupItem] = []
   @Published var loading = false
   @Published var working: Set<String> = []
@@ -39,7 +41,7 @@ import SwiftUI
 }
 
 struct StartupItemsView: View {
-  @StateObject private var model = StartupItemsModel()
+  @ObservedObject private var model = StartupItemsModel.shared
   @State private var query = ""
   @State private var scope: StartupScope?
   @State private var pendingRemoval: StartupItem?

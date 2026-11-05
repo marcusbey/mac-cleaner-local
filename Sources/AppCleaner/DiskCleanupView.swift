@@ -20,6 +20,8 @@ enum CleanupScanKind: String, CaseIterable, Identifiable {
 }
 
 @MainActor private final class DiskCleanupModel: ObservableObject {
+  /// Lives for the whole app run, so a scan keeps going and its results stay when you switch screens.
+  static let shared = DiskCleanupModel()
   @Published var kind: CleanupScanKind = .junk
   /// The kind the current list came from, so the button can offer Rescan.
   @Published var scannedKind: CleanupScanKind?
@@ -128,7 +130,7 @@ enum CleanupScanKind: String, CaseIterable, Identifiable {
 }
 
 struct DiskCleanupView: View {
-  @StateObject private var model = DiskCleanupModel()
+  @ObservedObject private var model = DiskCleanupModel.shared
   @State private var selected: Set<String> = []
   @State private var review = false
   @State private var removing = false

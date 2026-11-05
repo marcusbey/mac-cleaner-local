@@ -3,6 +3,8 @@ import CleanerCore
 import SwiftUI
 
 @MainActor private final class SpaceMapModel: ObservableObject {
+  /// Lives for the whole app run, so a scan keeps going and its results stay when you switch screens.
+  static let shared = SpaceMapModel()
   @Published var root: SizeNode?
   @Published var path: [String] = []
   @Published var scanning = false
@@ -106,7 +108,7 @@ import SwiftUI
 }
 
 struct SpaceMapView: View {
-  @StateObject private var model = SpaceMapModel()
+  @ObservedObject private var model = SpaceMapModel.shared
   @State private var hovered: SizeNode?
   /// Last segment under the pointer; survives the pointer moving into the context menu.
   @State private var menuTarget: SizeNode?
