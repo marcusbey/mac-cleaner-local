@@ -88,4 +88,29 @@ final class StartupItemsTests: XCTestCase {
     try Data("not a plist".utf8).write(to: url)
     XCTAssertNil(StartupItems.item(at: url, scope: .user, disabled: [:], running: []))
   }
+
+  func testRemovalCommandForSharedItemsStopsThenMovesToTrash() throws {
+    let program = folder.appendingPathComponent("tool")
+    try Data([1]).write(to: program)
+    let agent = try XCTUnwrap(
+      StartupItems.item(
+        at: try plist("com.adobe.ccxprocess.plist", ["Label": "com.adobe.ccxprocess", "Program": program.path]),
+        scope: .allUsers, disabled: [:], running: []))
+    let command = try StartupItems.removalCommand(
+      for: agent, folder: folder.path, trash: "/Users/u/.Trash/x.plist", uid: 501)
+    XCTAssertTrue(command.hasPrefix("/bin/launchctl bootout gui/501/com.adobe.ccxprocess"))
+    XCTAssertTrue(command.contains("/bin/mv -f '\(agent.url.path)' '/Users/u/.Trash/x.plist'"))
+
+    let daemon = try XCTUnwrap(
+      StartupItems.item(
+        at: try plist("com.adobe.agsservice.plist", ["Label": "com.adobe.agsservice", "Program": program.path]),
+        scope: .system, disabled: [:], running: []))
+    XCTAssertTrue(
+      try StartupItems.removalCommand(for: daemon, folder: folder.path, trash: "/t/x", uid: 501)
+        .hasPrefix("/bin/launchctl bootout system/com.adobe.agsservice"))
+
+    XCTAssertThrowsError(
+      try StartupItems.removalCommand(for: agent, folder: "/Library/LaunchAgents", trash: "/t/x", uid: 501),
+      "a file outside the scope's folder is refused")
+  }
 }

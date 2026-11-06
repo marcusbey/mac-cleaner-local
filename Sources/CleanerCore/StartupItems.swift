@@ -38,12 +38,11 @@ public struct StartupItem: Identifiable, Sendable {
 
 public enum StartupItemsError: LocalizedError {
   case invalidLabel(String)
-  case notRemovable(String)
+  case unexpectedLocation(String)
   public var errorDescription: String? {
     switch self {
     case .invalidLabel(let label): "Unexpected characters in startup item label: \(label)"
-    case .notRemovable(let label):
-      "\(label) is installed for all users. Turn it off instead, or remove its app."
+    case .unexpectedLocation(let path): "Startup file is not where it should be: \(path)"
     }
   }
 }
@@ -137,15 +136,37 @@ public enum StartupItems {
     }
   }
 
-  /// Stops an item in your account and moves its file to Trash.
+  /// Stops an item and moves its file to Trash. Items outside your account ask for admin.
   public static func remove(_ item: StartupItem) throws -> URL {
-    guard item.scope == .user else { throw StartupItemsError.notRemovable(item.label) }
     try validate(item.label)
-    _ = try? QuickMemoryCleanup.execute("/bin/launchctl", ["bootout", "gui/\(getuid())/\(item.label)"])
-    try TrashService.validateCanonicalNonSymlink(item.url)
-    var result: NSURL?
-    try FileManager.default.trashItem(at: item.url, resultingItemURL: &result)
-    return (result as URL?) ?? item.url
+    if item.scope == .user {
+      _ = try? QuickMemoryCleanup.execute("/bin/launchctl", ["bootout", "gui/\(getuid())/\(item.label)"])
+      try TrashService.validateCanonicalNonSymlink(item.url)
+      var result: NSURL?
+      try FileManager.default.trashItem(at: item.url, resultingItemURL: &result)
+      return (result as URL?) ?? item.url
+    }
+    let stamp = Int(Date().timeIntervalSince1970)
+    let trash = NSHomeDirectory() + "/.Trash/\(item.label)-\(stamp).plist"
+    try QuickMemoryCleanup.runAsAdministrator(
+      removalCommand(for: item, folder: item.scope.folder, trash: trash, uid: getuid()))
+    return URL(fileURLWithPath: trash)
+  }
+
+  /// Shell run as root for items installed for all users or as system services.
+  static func removalCommand(for item: StartupItem, folder: String, trash: String, uid: uid_t) throws
+    -> String
+  {
+    try validate(item.label)
+    let path = item.url.standardizedFileURL.path
+    guard path.hasPrefix(folder + "/"), !path.contains("'"), !trash.contains("'") else {
+      throw StartupItemsError.unexpectedLocation(path)
+    }
+    let stop =
+      item.scope == .system
+      ? "/bin/launchctl bootout system/\(item.label)"
+      : "/bin/launchctl bootout gui/\(uid)/\(item.label)"
+    return "\(stop) 2>/dev/null; /bin/mv -f '\(path)' '\(trash)'"
   }
 
   private static func validate(_ label: String) throws {

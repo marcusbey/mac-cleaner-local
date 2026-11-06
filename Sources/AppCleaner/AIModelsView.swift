@@ -177,16 +177,12 @@ struct AIModelsView: View {
         Text(item.modified.map { "Updated \($0.formatted(date: .abbreviated, time: .omitted))" } ?? " ")
           .font(.caption).foregroundStyle(.secondary)
         Spacer()
-        Button {
+        RowButton("Reveal", symbol: "magnifyingglass", help: "Reveal in Finder") {
           NSWorkspace.shared.activateFileViewerSelecting([item.location])
-        } label: {
-          Image(systemName: "magnifyingglass")
-        }.help("Reveal in Finder")
-        Button(role: .destructive) {
+        }
+        RowButton("Remove", symbol: "trash", destructive: true, help: "Move this model to Trash") {
           pendingRemoval = item
-        } label: {
-          Image(systemName: "trash")
-        }.help("Move to Trash")
+        }
       }
     }
     .padding(16)

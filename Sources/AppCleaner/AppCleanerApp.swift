@@ -478,7 +478,9 @@ struct ContentView: View {
                 Text(url.path).font(.caption).foregroundStyle(.secondary)
               }
               Spacer()
-              Button("Reveal") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
+              RowButton("Reveal", symbol: "magnifyingglass", help: "Reveal in Finder") {
+                NSWorkspace.shared.activateFileViewerSelecting([url])
+              }
             }.padding().background(panel, in: RoundedRectangle(cornerRadius: 10))
           }
         }

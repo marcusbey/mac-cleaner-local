@@ -83,7 +83,9 @@ struct RemainingFilesView: View {
                 }
                 Spacer()
                 Text(size(file.bytes)).monospacedDigit()
-                Button("Reveal") { NSWorkspace.shared.activateFileViewerSelecting([file.url]) }
+                RowButton("Reveal", symbol: "magnifyingglass", help: "Reveal in Finder") {
+                  NSWorkspace.shared.activateFileViewerSelecting([file.url])
+                }
               }.padding(14).background(panel, in: RoundedRectangle(cornerRadius: 10)).overlay(
                 RoundedRectangle(cornerRadius: 10).stroke(
                   selected.contains(file.id) ? Color.blue : line))

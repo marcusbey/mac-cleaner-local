@@ -304,7 +304,9 @@ struct DiskCleanupView: View {
       }
       Spacer()
       Text(size(candidate.bytes)).monospacedDigit()
-      Button("Reveal") { NSWorkspace.shared.activateFileViewerSelecting([candidate.url]) }
+      RowButton("Reveal", symbol: "magnifyingglass", help: "Reveal in Finder") {
+        NSWorkspace.shared.activateFileViewerSelecting([candidate.url])
+      }
     }.padding(14).background(panel, in: RoundedRectangle(cornerRadius: 10))
       .overlay(
         RoundedRectangle(cornerRadius: 10).stroke(selected.contains(candidate.id) ? .blue : line))

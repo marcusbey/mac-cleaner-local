@@ -40,7 +40,7 @@ macOS 14 or later · Apple Silicon and Intel · MIT licensed
 **Applications**
 - Inventory of `/Applications` and `~/Applications`, grouped by vendor, sorted by name or size.
 - Uninstall reviews the app and its related files (exact bundle-ID matches in your Library) before moving them to Trash.
-- **Startup Items**: launch agents and daemons grouped by scope (your account, all users, system), with owner app, running and at-login status, and broken leftovers whose program no longer exists. Turn items on or off (system services ask for an administrator password) or remove your own.
+- **Startup Items**: launch agents and daemons grouped by scope (your account, all users, system), with owner app, running and at-login status, and broken leftovers whose program no longer exists. Turn items on or off or remove them; shared and system items ask for an administrator password.
 - **App Leftovers**: data left in your Library by apps that are no longer installed.
 - **App Updates**: checks each app's Sparkle feed, the App Store, or its Electron release feed; Open Update goes to the publisher or App Store page.
 

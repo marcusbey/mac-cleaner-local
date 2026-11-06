@@ -273,15 +273,17 @@ struct SpaceMapView: View {
       Text(String(format: "%.1f%%", share(node.bytes, of: total) * 100)).font(.caption)
         .foregroundStyle(.secondary).frame(width: 46, alignment: .trailing)
       if let url = node.url {
-        Button {
+        RowButton(nil, symbol: "magnifyingglass", help: "Reveal in Finder") {
           NSWorkspace.shared.activateFileViewerSelecting([url])
-        } label: { Image(systemName: "magnifyingglass") }.help("Reveal in Finder")
-        Button {
-          pendingTrash = node
-        } label: { Image(systemName: "trash") }.help("Move to Trash")
+        }
+        RowButton(
+          nil, symbol: "trash", destructive: true,
+          help: SizeTree.canTrash(url)
+            ? "Move to Trash" : "Only items inside a folder of your home folder can be moved to Trash here"
+        ) { pendingTrash = node }
           .disabled(model.scanning || !SizeTree.canTrash(url))
       }
-    }.controlSize(.small).padding(10).contentShape(Rectangle())
+    }.padding(10).contentShape(Rectangle())
       .background(hovered?.id == node.id ? Color.blue.opacity(0.25) : panel, in: RoundedRectangle(cornerRadius: 8))
       .onTapGesture { model.open(node) }
       .onHover { hovered = $0 ? node : nil }

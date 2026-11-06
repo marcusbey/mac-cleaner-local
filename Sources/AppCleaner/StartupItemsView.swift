@@ -118,7 +118,10 @@ struct StartupItemsView: View {
       }
       Button("Cancel", role: .cancel) { pendingRemoval = nil }
     } message: { item in
-      Text("\(item.url.lastPathComponent) moves to Trash. The app itself is not removed.")
+      Text(
+        "\(item.url.lastPathComponent) moves to Trash. The app itself is not removed."
+          + (item.scope == .user ? "" : " This item is shared, so macOS will ask for your administrator password.")
+          + (item.programMissing ? "" : " If its app is still installed, it may add this item back; uninstall the app to remove it for good."))
     }
     .alert(
       "Startup Items",
@@ -197,28 +200,34 @@ struct StartupItemsView: View {
         if item.startsAtLogin { pill("At login", "power", .cyan) }
       }
       if model.working.contains(item.id) {
-        ProgressView().controlSize(.small).frame(width: 40)
+        ProgressView().controlSize(.small).frame(width: 48)
       } else {
         Toggle(
           "Enabled",
           isOn: Binding(get: { item.isEnabled }, set: { model.setEnabled(item, $0) })
-        ).toggleStyle(.switch).labelsHidden().controlSize(.small).frame(width: 40)
+        ).toggleStyle(.switch).labelsHidden().frame(width: 48)
           .help(item.scope.needsAdmin ? "Asks for your administrator password" : "Turn on or off for your account")
       }
-      Menu {
-        Button("Reveal Startup File") { NSWorkspace.shared.activateFileViewerSelecting([item.url]) }
-        if let program = item.program, !item.programMissing {
-          Button("Reveal Program") {
-            NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: program)])
-          }
+      RowButton(nil, symbol: "magnifyingglass", help: "Reveal the startup file in Finder") {
+        NSWorkspace.shared.activateFileViewerSelecting([item.url])
+      }
+      RowButton(
+        "Remove", symbol: "trash", destructive: true,
+        help: item.scope == .user
+          ? "Stop it and move its startup file to Trash"
+          : "Stop it and move its startup file to Trash (asks for your administrator password)"
+      ) { pendingRemoval = item }
+      .disabled(model.working.contains(item.id))
+    }
+    .contextMenu {
+      Button("Reveal Startup File") { NSWorkspace.shared.activateFileViewerSelecting([item.url]) }
+      if let program = item.program, !item.programMissing {
+        Button("Reveal Program") {
+          NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: program)])
         }
-        if item.scope == .user {
-          Divider()
-          Button("Remove…", role: .destructive) { pendingRemoval = item }
-        }
-      } label: {
-        Image(systemName: "ellipsis.circle")
-      }.menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+      }
+      Divider()
+      Button("Remove…", role: .destructive) { pendingRemoval = item }
     }
     .padding(.horizontal, 14).padding(.vertical, 10)
     .background(panel, in: RoundedRectangle(cornerRadius: 10))

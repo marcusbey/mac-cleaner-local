@@ -174,7 +174,9 @@ struct MemoryView: View {
             }
             Spacer()
             Text(size(Int64(clamping: application.footprintBytes))).monospacedDigit()
-            Button("Quit") { pendingQuit = application }
+            RowButton("Quit", symbol: "xmark.circle", destructive: true, help: "Ask \(application.name) to quit") {
+              pendingQuit = application
+            }
               .disabled(application.pid == getpid() || application.bundleIdentifier == "com.apple.finder")
           }
           .padding(14)
