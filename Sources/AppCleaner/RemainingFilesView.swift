@@ -27,6 +27,11 @@ struct RemainingFilesView: View {
         Spacer()
         Button("Rescan", action: rescan).disabled(model.scanningRemaining || model.scanning || busy)
       }
+      InfoCard(
+        symbol: "questionmark.circle",
+        title: "How it works",
+        text:
+          "Dragging an app to Trash leaves its data in your Library. This finds folders named after an app (like com.spotify.client) when that app is no longer installed or running. Nothing is selected for you: command-line tools and shared components can still use some of these, so check each path before removing.")
       HStack {
         Image(systemName: "magnifyingglass")
         TextField("Search leftovers", text: $query).textFieldStyle(.plain)
@@ -35,11 +40,6 @@ struct RemainingFilesView: View {
           Text("Name").tag(false)
         }.frame(width: 180)
       }.padding(12).background(panel, in: RoundedRectangle(cornerRadius: 10))
-      InfoCard(
-        symbol: "questionmark.circle",
-        title: "How it works",
-        text:
-          "Dragging an app to Trash leaves its data in your Library. This finds folders named after an app (like com.spotify.client) when that app is no longer installed or running. Nothing is selected for you: command-line tools and shared components can still use some of these, so check each path before removing.")
       HStack {
         Text("\(visible.count) candidates · \(size(visible.reduce(0){$0 + max(0,$1.bytes)}))").font(
           .headline)
@@ -54,14 +54,12 @@ struct RemainingFilesView: View {
         ).frame(maxWidth: .infinity)
         Spacer()
       } else if visible.isEmpty {
-        Spacer()
         ContentUnavailableView(
           query.isEmpty ? "No possible leftovers found" : "No matching files",
           systemImage: "checkmark.shield",
           description: Text(
             "The scan covers readable user Library caches, preferences, support, saved state and logs."
-          ))
-        Spacer()
+          )).frame(maxWidth: .infinity, maxHeight: .infinity)
       } else {
         ScrollView {
           LazyVStack(spacing: 8) {

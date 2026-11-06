@@ -67,12 +67,10 @@ struct MemoryView: View {
         ProgressView("Reading memory statistics…").frame(maxWidth: .infinity)
         Spacer()
       } else {
-        Spacer()
         ContentUnavailableView(
           "Memory statistics unavailable",
           systemImage: "memorychip",
-          description: Text(errorMessage ?? "Refresh to try again."))
-        Spacer()
+          description: Text(errorMessage ?? "Refresh to try again.")).frame(maxWidth: .infinity, maxHeight: .infinity)
       }
     }
     .padding(28)

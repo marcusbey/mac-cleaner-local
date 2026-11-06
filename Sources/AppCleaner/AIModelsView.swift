@@ -50,7 +50,7 @@ struct AIModelsView: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: 18) {
-      HStack(alignment: .top) {
+      HStack {
         VStack(alignment: .leading, spacing: 6) {
           Text("AI Models").font(.largeTitle.bold())
           Text("Local models from Ollama, LM Studio, Hugging Face, Whisper, and apps.")
@@ -68,11 +68,9 @@ struct AIModelsView: View {
         ProgressView("Looking for models…").frame(maxWidth: .infinity)
         Spacer()
       } else if model.models.isEmpty {
-        Spacer()
         ContentUnavailableView(
           "No local AI models found", systemImage: "cpu",
-          description: Text("Searched \(model.searched.joined(separator: ", ")). Models under 50 MB inside apps are skipped."))
-        Spacer()
+          description: Text("Searched \(model.searched.joined(separator: ", ")). Models under 50 MB inside apps are skipped.")).frame(maxWidth: .infinity, maxHeight: .infinity)
       } else {
         summary
         ScrollView {

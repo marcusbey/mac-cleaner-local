@@ -5,6 +5,17 @@ import SwiftUI
 @main struct CleanerApp: App {
   @NSApplicationDelegateAdaptor(CleanerApplicationDelegate.self) var delegate
   @StateObject private var memoryMenu = MemoryMenuModel.shared
+
+  init() {
+    // macOS puts a menu bar item it has never seen at the far left of the right-hand group; on a
+    // full menu bar with a notch that spot is hidden. Start near the clock instead (distance from
+    // the right edge, the same preference macOS saves when you ⌘-drag an icon).
+    let key = "NSStatusItem Preferred Position Item-0"
+    if UserDefaults.standard.object(forKey: key) == nil {
+      UserDefaults.standard.set(160.0, forKey: key)
+    }
+  }
+
   var body: some Scene {
     WindowGroup(id: "main") { ContentView(memoryMenu: memoryMenu) }.windowStyle(
       .hiddenTitleBar
@@ -103,6 +114,8 @@ struct ContentView: View {
       }
     }
     .background(navy).foregroundStyle(.white).preferredColorScheme(.dark)
+    // Larger standard controls (buttons, pickers, switches, fields) across every screen.
+    .controlSize(.large)
     .frame(minWidth: 1000, minHeight: 650)
     .task { model.scan() }
     .sheet(item: $model.reviewSelection) { selection in
@@ -385,12 +398,10 @@ struct ContentView: View {
               || app.url == Bundle.main.bundleURL)
         }.padding(.bottom, 18)
       } else {
-        Spacer()
         ContentUnavailableView(
           model.scanning ? "Finding your applications" : "No applications found",
           systemImage: "app.dashed",
-          description: Text("Applications appear here after a local scan."))
-        Spacer()
+          description: Text("Applications appear here after a local scan.")).frame(maxWidth: .infinity, maxHeight: .infinity)
       }
     }.padding(.horizontal, 24).frame(maxWidth: .infinity)
   }
@@ -466,8 +477,10 @@ struct ContentView: View {
   }
   var utilityView: some View {
     VStack(alignment: .leading, spacing: 20) {
-      Text(section.rawValue).font(.largeTitle.bold()).padding(.top, 30)
-      Text(utilityDescription).foregroundStyle(.secondary)
+      VStack(alignment: .leading, spacing: 6) {
+        Text(section.rawValue).font(.largeTitle.bold())
+        Text(utilityDescription).foregroundStyle(.secondary)
+      }
       ScrollView {
         LazyVStack(spacing: 8) {
           ForEach(utilityItems, id: \.path) { url in
@@ -495,7 +508,7 @@ struct ContentView: View {
             URL(string: "x-apple.systempreferences:com.apple.LoginItems-Settings.extension")!)
         }
       }
-    }.padding(30).frame(maxWidth: .infinity)
+    }.padding(28).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
   }
   var utilityDescription: String {
     switch section {

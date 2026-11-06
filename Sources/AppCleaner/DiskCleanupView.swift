@@ -206,12 +206,10 @@ struct DiskCleanupView: View {
         ProgressView("Scanning approved folders…").frame(maxWidth: .infinity)
         Spacer()
       } else if model.candidates.isEmpty {
-        Spacer()
         ContentUnavailableView(
           model.cancelled ? "Scan cancelled" : "Choose a scan",
           systemImage: model.cancelled ? "xmark.circle" : "externaldrive",
-          description: Text("Only the folders named above are inspected."))
-        Spacer()
+          description: Text("Only the folders named above are inspected.")).frame(maxWidth: .infinity, maxHeight: .infinity)
       } else {
         HStack {
           Text(

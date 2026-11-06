@@ -56,7 +56,7 @@ struct StartupItemsView: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: 18) {
-      HStack(alignment: .top) {
+      HStack {
         VStack(alignment: .leading, spacing: 6) {
           Text("Startup Items").font(.largeTitle.bold())
           Text("Apps and helpers that start by themselves when you log in or your Mac starts.")

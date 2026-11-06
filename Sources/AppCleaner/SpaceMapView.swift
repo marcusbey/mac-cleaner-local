@@ -134,11 +134,9 @@ struct SpaceMapView: View {
           list(focus)
         }
       } else if !model.scanning {
-        Spacer()
         ContentUnavailableView(
           "See what fills your disk", systemImage: "chart.pie",
-          description: Text("Scan your home folder, the whole disk, or any folder."))
-        Spacer()
+          description: Text("Scan your home folder, the whole disk, or any folder.")).frame(maxWidth: .infinity, maxHeight: .infinity)
       }
     }.padding(28).frame(maxWidth: .infinity, maxHeight: .infinity)
       .confirmationDialog(

@@ -55,7 +55,7 @@ struct UpdatesView: View {
           ContentUnavailableView(
             "No matching updates", systemImage: "checkmark.circle",
             description: Text(
-              "Enable Show all results to inspect unsupported apps and failed checks."))
+              "Enable Show all results to inspect unsupported apps and failed checks.")).frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         ScrollView {
           LazyVStack(spacing: 10) {
@@ -92,14 +92,12 @@ struct UpdatesView: View {
           }
         }
       } else {
-        Spacer()
         ContentUnavailableView(
           "Check your applications", systemImage: "arrow.triangle.2.circlepath",
           description: Text(
             model.scanning
               ? "Application inventory is still loading."
-              : "Start a check to compare installed versions with supported publishers."))
-        Spacer()
+              : "Start a check to compare installed versions with supported publishers.")).frame(maxWidth: .infinity, maxHeight: .infinity)
       }
       HStack {
         Button("Open App Store") {
