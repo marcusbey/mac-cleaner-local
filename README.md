@@ -6,9 +6,14 @@ A native macOS utility for freeing memory, finding what fills your disk, and uni
 
 macOS 14 or later · Apple Silicon and Intel · MIT licensed
 
+![Space Map scanning the whole disk live](docs/images/space-map.jpg)
+
 ## Features
 
 **Memory**
+
+![Memory overview with the heaviest apps](docs/images/memory.jpg)
+
 - Starts at login as a menu-bar-only app (✦ plus live memory %), so Auto mode keeps working with no window open. Closing the window or ⌘Q hides it to the menu bar; **Quit Completely** stops it. **Open at login** in the panel turns this off.
 - Menu-bar panel with memory usage, the heaviest apps (helper processes inside each app bundle are counted), and Quit with confirmation.
 - **Free up memory** runs macOS `/usr/sbin/purge`, which flushes file cache back to free RAM. It never quits apps.
@@ -22,6 +27,9 @@ macOS 14 or later · Apple Silicon and Intel · MIT licensed
 - Stays on one volume and never follows symlinks. Items under 1 MB are merged into "smaller items". Hard links may be counted more than once.
 
 **Disk Cleanup**
+
+![Disk Cleanup developer scan with safety ratings](docs/images/disk-cleanup.jpg)
+
 - Four scans: **Caches & Logs** (`~/Library/Caches`, `~/Library/Logs`), **Developer** (Xcode DerivedData, device support, simulator caches, archives, npm/pnpm/yarn/bun/Gradle/Cargo/Go/`~/.cache` package caches, old iPhone updates, Mail downloads), **Dependencies** (`node_modules` in a projects folder you choose), and **Large Files** (over 100 MB in a folder you choose).
 - **Rescan** after removing items; the Trash size is shown because Trash frees space only when emptied.
 - Every item is rated **Safe**, **Likely safe**, or **Review** with a reason, using fixed rules in [`DiskSafety.swift`](Sources/CleanerCore/DiskSafety.swift):
@@ -38,6 +46,9 @@ macOS 14 or later · Apple Silicon and Intel · MIT licensed
 - Reveal in Finder or Move to Trash. Ollama layers shared with other models are kept.
 
 **Applications**
+
+![Applications grouped by vendor with sizes and uninstall review](docs/images/applications.jpg)
+
 - Inventory of `/Applications` and `~/Applications`, grouped by vendor, sorted by name or size.
 - Uninstall reviews the app and its related files (exact bundle-ID matches in your Library) before moving them to Trash.
 - **Startup Items**: launch agents and daemons grouped by scope (your account, all users, system), with owner app, running and at-login status, and broken leftovers whose program no longer exists. Turn items on or off or remove them; shared and system items ask for an administrator password.

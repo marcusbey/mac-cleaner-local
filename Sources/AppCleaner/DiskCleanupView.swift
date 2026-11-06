@@ -238,7 +238,7 @@ struct DiskCleanupView: View {
       }
 
       if !model.issues.isEmpty {
-        DisclosureGroup("\(model.issues.count) folders could not be scanned") {
+        DisclosureGroup("\(model.issues.count) folder\(model.issues.count == 1 ? "" : "s") could not be scanned") {
           ForEach(model.issues) { issue in
             Text("\(issue.path): \(issue.message)").font(.caption).foregroundStyle(.orange)
               .textSelection(.enabled)
